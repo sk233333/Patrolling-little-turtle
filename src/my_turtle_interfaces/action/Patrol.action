@@ -1,0 +1,13 @@
+# Goal:按顺序经过的航点列表（turtlesim 世界坐标，单位 m)
+geometry_msgs/Point[] waypoints
+---
+# Result:任务最终结果
+bool success
+int32 waypoints_completed
+string message
+---
+# Feedback:执行过程反馈
+int32 current_index
+int32 total_waypoints
+float32 distance_to_target
+float32 distance_remaining
