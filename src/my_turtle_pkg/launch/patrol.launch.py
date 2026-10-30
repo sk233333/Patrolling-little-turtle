@@ -9,6 +9,7 @@ from launch_ros.actions import Node
 
 PRESETS = {'slow': (0.5, 0.8), 'fast': (1.5, 2.0)}
 
+
 def launch_setup(context, *args, **kwargs):
     mode = LaunchConfiguration('mode').perform(context)
     if mode not in PRESETS:
@@ -31,6 +32,7 @@ def launch_setup(context, *args, **kwargs):
              parameters=[params],
              condition=IfCondition(LaunchConfiguration('client'))),
     ]
+
 
 def generate_launch_description():
     return LaunchDescription([

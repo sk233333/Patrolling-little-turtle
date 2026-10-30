@@ -13,7 +13,12 @@ from turtlesim.msg import Pose
 
 from my_turtle_interfaces.action import Patrol
 
-from my_turtle_pkg.patrol_math import clamp, normalize_angle, remaining_distance
+from my_turtle_pkg.patrol_math import (
+    clamp,
+    normalize_angle,
+    remaining_distance,
+    validate_waypoints,
+)
 
 
 class PatrolServer(Node):
@@ -94,12 +99,14 @@ class PatrolServer(Node):
         result = Patrol.Result()
         waypoints = goal_handle.request.waypoints
 
-        if not waypoints:
-            self.get_logger().warn('收到空航点列表，拒绝执行')
+        try:
+            validate_waypoints(waypoints)
+        except ValueError as exc:
+            self.get_logger().error(f'非法航点，拒绝执行：{exc}')
             goal_handle.abort()
             result.success = False
             result.waypoints_completed = 0
-            result.message = 'empty waypoints'
+            result.message = f'invalid waypoints: {exc}'
             return result
 
         if not self._pose_event.wait(timeout=float(self.get_parameter('pose_timeout').value)):
@@ -214,6 +221,7 @@ class PatrolServer(Node):
             self._stop()
             self._busy = False
 
+
 def main(args=None):
     rclpy.init(args=args)
     node = PatrolServer()
@@ -225,6 +233,7 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()

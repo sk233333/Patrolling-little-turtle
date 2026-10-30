@@ -10,6 +10,7 @@ from rclpy.signals import SignalHandlerOptions
 from rclpy.utilities import remove_ros_args
 
 from my_turtle_interfaces.action import Patrol
+from my_turtle_pkg.patrol_math import validate_waypoints
 
 
 class PatrolClient(Node):
@@ -39,7 +40,7 @@ class PatrolClient(Node):
             self.get_logger().error(f'patrol_server 未就绪，{wait_timeout:.1f}s 超时')
             self._done = True
             return
-        
+
         goal = Patrol.Goal()
         goal.waypoints = [Point(x=float(x), y=float(y), z=0.0)
                           for x, y in waypoints]
@@ -56,7 +57,7 @@ class PatrolClient(Node):
             self.get_logger().error('目标被拒绝')
             self._done = True
             return
-        
+
         self._goal_handle = goal_handle
         self.get_logger().info('目标已接受，等待结果')
         goal_handle.get_result_async().add_done_callback(self._on_result)
@@ -124,9 +125,7 @@ def main(args=None):
     else:
         xs = list(node.get_parameter('default_waypoints_x').value)
         ys = list(node.get_parameter('default_waypoints_y').value)
-        if len(xs) != len(ys):
-            node.get_logger().error('航点 x/y 数量不一致')
-            xs, ys = [], []
+        validate_waypoints(xs, ys)
         waypoints = list(zip(xs, ys))
 
     try:
@@ -136,6 +135,7 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
