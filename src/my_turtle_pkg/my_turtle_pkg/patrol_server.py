@@ -99,10 +99,8 @@ class PatrolServer(Node):
             result.message = 'pose timeout'
             return result
 
-        wp = waypoints[0]
         feedback = Patrol.Feedback()
         feedback.total_waypoints = len(waypoints)
-        feedback.current_index = 0
 
         linear_speed = float(self.get_parameter('linear_speed').value)
         angular_speed = float(self.get_parameter('angular_speed').value)
@@ -113,7 +111,7 @@ class PatrolServer(Node):
         completed = 0
 
         try:
-            while rclpy.ok():
+            for idx, wp in enumerate(waypoints):
                 if goal_handle.is_cancel_requested:
                     self._stop()
                     self.get_logger().warn(
@@ -124,50 +122,68 @@ class PatrolServer(Node):
                     result.message = 'canceled'
                     return result
 
-                pose = self._pose
-                if pose is None:
-                    time.sleep(0.01)
-                    continue
+                self.get_logger().info(
+                    f'前往航点 {idx + 1}/{len(waypoints)}: ({wp.x:.2f}, {wp.y:.2f})')
 
-                linear_speed = float(self.get_parameter('linear_speed').value)
-                angular_speed = float(self.get_parameter('angular_speed').value)
-                heading_gain = float(self.get_parameter('heading_gain').value)
-                waypoint_tolerance = float(self.get_parameter('waypoint_tolerance').value)
-                heading_tolerance = float(self.get_parameter('heading_tolerance').value)
-                feedback_period = float(self.get_parameter('feedback_period').value)
+                while rclpy.ok():
+                    if goal_handle.is_cancel_requested:
+                        self._stop()
+                        self.get_logger().warn(
+                            f'任务已取消：完成 {completed}/{len(waypoints)} 个航点')
+                        goal_handle.canceled()
+                        result.success = False
+                        result.waypoints_completed = completed
+                        result.message = 'canceled'
+                        return result
 
-                dx = wp.x - pose.x
-                dy = wp.y - pose.y
-                dist = math.hypot(dx, dy)
-                err = normalize_angle(math.atan2(dy, dx) - pose.theta)
+                    pose = self._pose
+                    if pose is None:
+                        time.sleep(0.01)
+                        continue
 
-                if dist <= waypoint_tolerance:
-                    self._stop()
-                    self.get_logger().info(
-                        f'到达航点 1/{len(waypoints)}，累计完成 1 个')
-                    completed = 1
-                    result.success = True
-                    result.waypoints_completed = 1
-                    result.message = 'reached'
-                    goal_handle.succeed()
-                    return result
+                    linear_speed = float(self.get_parameter('linear_speed').value)
+                    angular_speed = float(self.get_parameter('angular_speed').value)
+                    heading_gain = float(self.get_parameter('heading_gain').value)
+                    waypoint_tolerance = float(self.get_parameter('waypoint_tolerance').value)
+                    heading_tolerance = float(self.get_parameter('heading_tolerance').value)
+                    feedback_period = float(self.get_parameter('feedback_period').value)
 
-                if abs(err) > heading_tolerance:
-                    v = 0.0
-                else:
-                    v = linear_speed
-                w = clamp(heading_gain * err, -angular_speed, angular_speed)
-                self._publish(v, w)
+                    dx = wp.x - pose.x
+                    dy = wp.y - pose.y
+                    dist = math.hypot(dx, dy)
+                    err = normalize_angle(math.atan2(dy, dx) - pose.theta)
 
-                now = time.monotonic()
-                if now - last_feedback >= feedback_period:
-                    feedback.distance_to_target = float(dist)
-                    feedback.distance_remaining = float(
-                        remaining_distance(pose, waypoints, 0))
-                    goal_handle.publish_feedback(feedback)
-                    last_feedback = now
+                    if dist <= waypoint_tolerance:
+                        self._stop()
+                        self.get_logger().info(
+                            f'到达航点 {idx + 1}/{len(waypoints)}，累计完成 {completed + 1} 个')
+                        completed += 1
+                        break
 
-                time.sleep(1.0 / float(self.get_parameter('control_frequency').value))
+                    if abs(err) > heading_tolerance:
+                        v = 0.0
+                    else:
+                        v = linear_speed
+                    w = clamp(heading_gain * err, -angular_speed, angular_speed)
+                    self._publish(v, w)
+
+                    now = time.monotonic()
+                    if now - last_feedback >= feedback_period:
+                        feedback.current_index = idx
+                        feedback.distance_to_target = float(dist)
+                        feedback.distance_remaining = float(
+                            remaining_distance(pose, waypoints, idx))
+                        goal_handle.publish_feedback(feedback)
+                        last_feedback = now
+
+                    time.sleep(1.0 / float(self.get_parameter('control_frequency').value))
+
+            self._stop()
+            result.success = True
+            result.waypoints_completed = completed
+            result.message = f'reached {completed} waypoints'
+            goal_handle.succeed()
+            return result
         except Exception as exc:
             self._stop()
             self.get_logger().error(f'执行异常：{exc}')
