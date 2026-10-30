@@ -8,6 +8,7 @@ from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
+from rcl_interfaces.msg import SetParametersResult
 from turtlesim.msg import Pose
 
 from my_turtle_interfaces.action import Patrol
@@ -28,6 +29,8 @@ class PatrolServer(Node):
         self.declare_parameter('control_frequency', 20.0)
         self.declare_parameter('feedback_period', 0.2)
         self.declare_parameter('pose_timeout', 2.0)
+
+        self.add_on_set_parameters_callback(self._on_set_parameters)
 
         self._pose = None
         self._pose_event = threading.Event()
@@ -71,6 +74,21 @@ class PatrolServer(Node):
 
     def _stop(self):
         self._cmd_pub.publish(Twist())
+
+    def _on_set_parameters(self, params):
+        positive = ('linear_speed', 'angular_speed', 'control_frequency')
+        nonnegative = ('waypoint_tolerance', 'heading_tolerance',
+                       'feedback_period', 'pose_timeout', 'heading_gain')
+        for p in params:
+            if p.name in positive and p.value <= 0.0:
+                self.get_logger().error(f'非法参数 {p.name}={p.value}，必须 > 0')
+                return SetParametersResult(
+                    successful=False, reason=f'{p.name} must be > 0')
+            if p.name in nonnegative and p.value < 0.0:
+                self.get_logger().error(f'非法参数 {p.name}={p.value}，必须 >= 0')
+                return SetParametersResult(
+                    successful=False, reason=f'{p.name} must be >= 0')
+        return SetParametersResult(successful=True)
 
     def _execute_cb(self, goal_handle):
         result = Patrol.Result()

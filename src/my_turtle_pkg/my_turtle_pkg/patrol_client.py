@@ -7,15 +7,10 @@ from geometry_msgs.msg import Point
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.signals import SignalHandlerOptions
+from rclpy.utilities import remove_ros_args
 
 from my_turtle_interfaces.action import Patrol
 
-DEFAULT_WAYPOINTS = [
-    (7.0, 7.0),
-    (3.0, 7.0),
-    (3.0, 3.0),
-    (7.0, 3.0),
-]
 
 class PatrolClient(Node):
 
@@ -29,14 +24,19 @@ class PatrolClient(Node):
         self._canceling = False
         self._goal_sent_at = None
 
+        self.declare_parameter('default_waypoints_x', [2.0, 2.0, 8.0, 8.0])
+        self.declare_parameter('default_waypoints_y', [2.0, 8.0, 8.0, 2.0])
         self.declare_parameter('goal_timeout_sec', 0.0)
+        self.declare_parameter('server_wait_timeout', 10.0)
+        self.declare_parameter('exit_after_result', True)
 
         signal.signal(signal.SIGINT, self._on_sigint)
         self.create_timer(0.1, self._tick)
 
     def send_patrol(self, waypoints):
-        if not self._client.wait_for_server(timeout_sec=5.0):
-            self.get_logger().error('patrol_server 未就绪，5 秒超时')
+        wait_timeout = float(self.get_parameter('server_wait_timeout').value)
+        if not self._client.wait_for_server(timeout_sec=wait_timeout):
+            self.get_logger().error(f'patrol_server 未就绪，{wait_timeout:.1f}s 超时')
             self._done = True
             return
         
@@ -76,7 +76,8 @@ class PatrolClient(Node):
             f'message={result.message}'
         )
         self._done = True
-        rclpy.shutdown()
+        if bool(self.get_parameter('exit_after_result').value):
+            rclpy.shutdown()
 
     def _on_sigint(self, signum, frame):
         self._sigint = True
@@ -115,12 +116,18 @@ def main(args=None):
     rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     node = PatrolClient()
 
-    if len(sys.argv) >= 2:
-        raw = sys.argv[1]
+    cli_args = remove_ros_args(args=sys.argv)
+    if len(cli_args) >= 2:
+        raw = cli_args[1]
         waypoints = [tuple(float(v) for v in pair.split(','))
                      for pair in raw.split(';')]
     else:
-        waypoints = DEFAULT_WAYPOINTS
+        xs = list(node.get_parameter('default_waypoints_x').value)
+        ys = list(node.get_parameter('default_waypoints_y').value)
+        if len(xs) != len(ys):
+            node.get_logger().error('航点 x/y 数量不一致')
+            xs, ys = [], []
+        waypoints = list(zip(xs, ys))
 
     try:
         node.send_patrol(waypoints)
